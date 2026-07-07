@@ -6,11 +6,23 @@
 ---
 
 ## P0 · 去风险 POC（最先做，§14.1）
-- [ ] POC-1 CORS 直连：静态页用原生 fetch POST 一个 <25MB 音频块到 OpenAI，确认浏览器能否直连（否 → 需代理）（§8.1）
-- [ ] POC-2 截断/分块：同段 15–20min 音频对比「不加 chunking / auto / 5min 短块」的漏句率与幻觉率 → 定块长与 `chunking_strategy`（§5.3 / §7）
-- [ ] POC-3 说话人跨块：多人音频切 3–4 块，测 `known_speaker_references` 锚定的跨块命中率 → 决定 §6.3-B 是否启用
-- [ ] POC-旁：确认 diarize 的 `usage` 到底返回 tokens 还是 duration（§6.4）
-- [ ] 汇总 POC 结论，回填设计书默认参数
+> 浏览器实跑工具：[poc/cors-usage-poc.html](./poc/cors-usage-poc.html)（粘 Key + 拖音频）。带 Key/音频的付费 POC 暂缓。
+
+### 已确认（官方文档核对 + curl 实测响应头，无需 Key，2026-07-07）
+- [x] **POC-1 CORS 直连 → 可直连，无需代理**。curl 实测 `api.openai.com/v1/audio/transcriptions`：preflight `OPTIONS→200`；`allow-methods: GET,OPTIONS,POST`；`allow-headers` 回显所请求头（含 `authorization`，连 `content-type`/`x-stainless-*` 也放行）；`allow-origin` 回显任意 Origin，无 auth 的 POST 返回 `*`；`max-age 86400`。CORS 结果完全由响应头决定，故确认：浏览器原生 `fetch`+`FormData`（仅带 `Authorization`、不手设 `Content-Type`）会放行 → **代理从默认降级为可选后备**（企业网关场景仍可能需要）（§8.1）
+- [x] **输入硬限制**（官方 Speech-to-text 指南）：25MB / 请求（限字节数非时长）；官方受支持格式 `mp3 / mp4 / mpeg / mpga / m4a / wav / webm`
+- [x] **diarize 参数形态**（官方指南，均与 DESIGN 一致）：`response_format` 支持 `json / text / diarized_json`（后者才带 speaker 段）；音频 >30s **必填** `chunking_strategy`（推荐 `auto`）；**不支持** `prompt` / `logprobs` / `timestamp_granularities[]`；`known_speaker_names[]` / `known_speaker_references[]` 最多 **4 人**、参考片段 **2–10s**、multipart 下编码为 **data URL**
+- [x] **POC-3 先验**（官方社区专帖）：diarize **只保证块内一致**；`known_speaker_references` 跨块锚定**无官方文档、无已验证成功案例**（有用户最终自训模型）→ 坚持 **基线 A（局部标签 + 人工合并）为默认**、基线 B 保持实验关闭。这仍是最大风险 R1；实测只为量化命中率，不改默认策略
+
+### 需回填 DESIGN 的两处修正（本轮确认，待改文档）
+- [ ] **修正#1 上传格式**：§5.1 预处理输出 **FLAC**，但 FLAC / ogg **不在**官方受支持列表 → 先按 **`wav` 兜底**（16kHz 单声道 wav ≈ FLAC 两倍体积，但仍远 <25MB/块）；FLAC 是否被新 gpt-4o 系列接受留待实测
+- [ ] **修正#2 SDK/CORS 因果**：§8.1「SDK 的 `X-Stainless-*` 头触发 CORS 预检失败」**实测不成立**（这些头会被回显放行）；SDK 不能在浏览器跑的真正原因是其客户端守卫 **`dangerouslyAllowBrowser`**。「用原生 fetch，不用 SDK」结论不变，仅需改写理由
+
+### 暂缓 · 需真 Key + 真音频（付费调用，用 poc.html 跑）
+- [ ] POC-旁 `usage` 形态：diarize 到底返回 `tokens` 还是 `duration`（§6.4 悬而未决）—— poc.html 会高亮 `usage.type`
+- [ ] POC-1 端到端 200 复核 + FLAC 格式实测（顺带验证修正#1）
+- [ ] POC-2 分块：同段 15–20min 音频对比「不加 chunking / auto / 5min 短块」的漏句率与幻觉率 → 定块长与 `chunking_strategy`（§5.3 / §7）
+- [ ] POC-3 实测：多块 + `known_speaker_references` 跨块命中率（poc.html 待扩展此模式）→ 决定 §6.3-B 是否启用
 
 ---
 
